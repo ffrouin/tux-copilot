@@ -50,19 +50,62 @@ def run_get_time() -> str:
 
 def run_write_file(path: str, contents: str) -> str:
     """
-    Write `contents` to `path` relative to the shared host directory.
-    Returns a short confirmation string.
+    Write `contents` to `path` relative to /workdir.
+    Never overwrite an existing file.
     """
-    full_path = Path(WORKDIR_HOST)/path
-    full_path.parent.mkdir(parents=True, exist_ok=True)
-    full_path.write_text(contents, encoding="utf-8")
-    return f"✅ File written to {full_path}"
+    full_path = Path(WORKDIR_HOST) / path
 
+    # If the file already exists, STOP — do NOT overwrite.
+    if full_path.exists():
+        return f"❌ REFUSED: File already exists and will not be overwritten: {full_path}"
+
+    # Ensure directory exists
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create new file
+    full_path.write_text(contents, encoding="utf-8")
+    return f"✅ File created: {full_path}"
+
+def run_chmod_x(path: str) -> str:
+    """Set +x permission on a file inside sandbox."""
+    full_path = Path(WORKDIR_HOST) / path
+    if not full_path.exists():
+        return f"[ERROR] File not found: {full_path}"
+
+    full_path.chmod(full_path.stat().st_mode | 0o111)
+    return f"✅ chmod +x applied to {full_path}"
+
+
+def run_exec(path: str) -> str:
+    """Execute a script *inside the Docker container*."""
+    script_path = f"/workdir/{path}"
+
+    # Run inside container
+    cmd = ["docker", "exec", CONTAINER_NAME, script_path]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception as e:
+        return f"[ERROR] Execution failed: {e}"
+
+    output = result.stdout.strip()
+    errors = result.stderr.strip()
+
+    if errors:
+        return f"⚠️ STDERR:\n{errors}\n\nSTDOUT:\n{output}"
+    return f"🟢 Execution OK:\n{output}"
 
 TOOLS = {
     "get_date": run_get_date,
     "get_time": run_get_time,
     "write_file": run_write_file,
+    "chmod_x": run_chmod_x,
+    "exec_script": run_exec,
 }
 
 # ---------- UTILITIES ----------
@@ -153,7 +196,35 @@ async def call_llm(messages: list[dict]):
                      },
                      "required":["path","contents"]
                     }
-                }}
+                }},
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "chmod_x",
+                        "description": "Apply chmod +x to a file inside /workdir",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Relative file path"},
+                            },
+                            "required": ["path"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "exec_script",
+                        "description": "Execute a script inside the container using docker exec",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Relative script path inside /workdir"},
+                            },
+                            "required": ["path"]
+                        }
+                    }
+                }
             ]
         }
         resp = await client.post(LMSTUDIO_URL, json=payload)
