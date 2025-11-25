@@ -4,8 +4,8 @@
 #
 # 1. Ensure the sandbox image exists (build if needed)
 # 2. Spin up a container exposing /workdir as a volume
-# 3. Start an interactive chat with your LM‑Studio endpoint
-#    using function calling (get_date, get_time)
+# 3. Start an interactive chat with your LM-Studio endpoint
+#    using function calling (get_date, get_time, write_file)
 # -------------------------------------------------------------
 import os
 import sys
@@ -16,6 +16,12 @@ import time
 from pathlib import Path
 
 import httpx
+
+# ---------- NEW: Rich Markdown Rendering ----------
+from rich.console import Console
+from rich.markdown import Markdown
+console = Console()
+# --------------------------------------------------
 
 # ---------- CONFIG ----------
 IMAGE_NAME = "tux-copilot:latest"
@@ -41,15 +47,17 @@ def run_get_time() -> str:
     """Return current local time (HH:MM:SS)."""
     return time.strftime("%H:%M:%S")
 
+
 def run_write_file(path: str, contents: str) -> str:
     """
     Write `contents` to `path` relative to the shared host directory.
     Returns a short confirmation string.
     """
-    full_path = Path(WORKDIR_HOST)/path          # <--- use host path
+    full_path = Path(WORKDIR_HOST)/path
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_text(contents, encoding="utf-8")
     return f"✅ File written to {full_path}"
+
 
 TOOLS = {
     "get_date": run_get_date,
@@ -80,7 +88,6 @@ def build_image():
 
 def start_container():
     """Run the sandbox container detached, mounting WORKDIR_HOST."""
-    # Ensure host dir exists
     Path(WORKDIR_HOST).mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -105,7 +112,6 @@ def add_message(messages: list[dict], role: str, content: str):
 
 
 def add_tool_call(messages: list[dict], tool_id: str, name: str, arguments: dict):
-    """Append the assistant’s tool call to the message history."""
     messages.append({
         "role": "assistant",
         "tool_calls": [{
@@ -120,7 +126,6 @@ def add_tool_call(messages: list[dict], tool_id: str, name: str, arguments: dict
 
 
 def add_tool_response(messages: list[dict], tool_id: str, result: str):
-    """Append the tool’s output as a separate message."""
     messages.append({
         "role": "tool",
         "tool_call_id": tool_id,
@@ -133,10 +138,9 @@ async def call_llm(messages: list[dict]):
         payload = {
             "model": MODEL,
             "messages": messages,
-            # expose the two functions to the model
             "tools": [
                 {"type":"function","function":{"name":"get_date","description":"Return current ISO date","parameters":{"type":"object","properties":{}}}},
-                {"type":"function","function":{"name":"get_time","description":"Return current local time (HH:MM:SS)","parameters":{"type":"object","properties":{}}}},
+                {"type":"function","function":{"name":"get_time","description":"Return current local time","parameters":{"type":"object","properties":{}}}},
                 {"type":"function",
                  "function":{
                     "name":"write_file",
@@ -144,8 +148,8 @@ async def call_llm(messages: list[dict]):
                     "parameters":{
                      "type":"object",
                      "properties":{
-                         "path":{"type":"string","description":"Relative path inside /workdir"},
-                         "contents":{"type":"string","description":"File content"}
+                         "path":{"type":"string"},
+                         "contents":{"type":"string"}
                      },
                      "required":["path","contents"]
                     }
@@ -156,74 +160,70 @@ async def call_llm(messages: list[dict]):
         resp.raise_for_status()
         return resp.json()
 
-
 async def chat_loop():
-    print("\n🟢 Interactive Chat Started")
-    print("Type your message and press ENTER. Ctrl‑C to quit.\n")
+    console.print("\n🟢 Interactive Chat Started", style="bold green")
+    console.print("Type your message and press ENTER. Ctrl-C or 'exit' to quit.\n", style="dim")
 
     messages: list[dict] = []
 
     while True:
         try:
-            user_input = input("You> ")
+            user_input = input("You> ").strip()
         except KeyboardInterrupt:
-            print("\n[!] Exiting…")
+            console.print("\n👋 Exiting cleanly…", style="bold yellow")
+            break
+
+        # Allow exit commands
+        if user_input.lower() in {"exit", "quit", "bye"}:
+            console.print("\n👋 Exiting cleanly…", style="bold yellow")
             break
 
         add_message(messages, "user", user_input)
 
-        # 1️⃣ Send to LLM
+        # 1⃣ Send to LLM
         response = await call_llm(messages)
         choice = response["choices"][0]["message"]
 
-        # 2️⃣ If the model wants to call a tool
+        # 2⃣ Tool call?
         if "tool_calls" in choice and choice["tool_calls"]:
             for tc in choice["tool_calls"]:
                 tool_name = tc["function"]["name"]
-                # Parse arguments JSON – LM‑Studio gives us a string, so we need to decode it.
                 raw_args = tc["function"].get("arguments", "{}")
+
                 try:
                     args_dict = json.loads(raw_args)
                 except json.JSONDecodeError:
                     args_dict = {}
 
                 tool_id = tc.get("id") or str(uuid.uuid4())
-
-                # Log the assistant’s intent
                 add_tool_call(messages, tool_id, tool_name, args_dict)
 
-                # Execute locally with the parsed arguments
                 func = TOOLS.get(tool_name)
                 if func:
                     try:
-                        result = func(**args_dict)   # <--- pass **kwargs
+                        result = func(**args_dict)
                     except TypeError as e:
                         result = f"[ERROR] {e}"
                 else:
                     result = f"[ERROR] Unknown tool: {tool_name}"
 
-                # Append the tool’s output back into the conversation
                 add_tool_response(messages, tool_id, result)
-            
-            # 3️⃣ Ask LLM for the final answer after we fed back tool outputs
+
+            # Ask again after tool output
             final_resp = await call_llm(messages)
             final_msg = final_resp["choices"][0]["message"]["content"]
             add_message(messages, "assistant", final_msg)
-            print(f"AI> {final_msg}")
-
+            console.print(Markdown(final_msg))
         else:
             # Normal assistant reply
             text = choice.get("content", "")
             add_message(messages, "assistant", text)
-            print(f"AI> {text}")
-
+            console.print(Markdown(text))
 
 def main():
-    # 0️⃣ Make sure we have a clean environment
     if not check_image():
         build_image()
 
-    # 1️⃣ Start sandbox container
     start_container()
 
     try:
