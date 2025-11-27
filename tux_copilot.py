@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-# -------------------------------------------------------------
-# TUX Copilot Driver (Enhanced)
-#
-# Features:
-# 1. Sandbox Docker container for /workdir
-# 2. Function-calling AI (get_date, get_time, write_file, chmod_x, exec_script, read_file)
-# 3. Real-time console display of tool calls and results
-# 4. Color-coded tool outputs
-# -------------------------------------------------------------
+"""
+tux_copilot.py – Main Application Driver
+
+This script is the entrypoint for TUX Copilot. It coordinates the interaction
+between the user, the local LLM endpoint, the sandbox environment, and the
+tooling layer.
+
+Its responsibilities include:
+• managing the interactive chat loop,
+• sending messages and tool specifications to the LLM,
+• dispatching tool calls returned by the model to the appropriate functions,
+• displaying results and assistant responses in a readable format,
+• ensuring the sandbox container is running during the session.
+
+In short: this script orchestrates the full Copilot runtime, linking the LLM,
+the tools, and the sandbox into a unified interactive experience.
+"""
+
+from __future__ import annotations
+
 import os
-import sys
-import subprocess
 import json
 import uuid
 import time
@@ -18,162 +27,51 @@ from pathlib import Path
 
 import httpx
 
-# ---------- NEW: Rich Markdown Rendering ----------
+# Rich console for pretty output ------------------------------------------
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.text import Text
 console = Console()
-# --------------------------------------------------
 
-# ---------- CONFIG ----------
-IMAGE_NAME = "tux-copilot:latest"
-CONTAINER_NAME = "tux_copilot"
-WORKDIR_HOST = "./sandbox_code"   # host dir that will be mounted into the container
-LMSTUDIO_URL = os.getenv("LMSTUDIO_URL", "http://localhost:1234/v1/chat/completions")
-MODEL = os.getenv("MODEL", "openai/gpt-oss-20b")
+# Import the split modules --------------------------------------------------
+from tools import TOOLS, run_get_date, run_get_time, run_write_file, \
+    run_chmod_x, run_exec, run_read_file, LLM_TOOLS_PAYLOAD
+from sandbox import check_image, build_image, start_container, stop_container
 
-timeout_prefs = httpx.Timeout(
-    connect=60.0,
-    read=300.0,
-    write=60.0,
-    pool=60.0,
+# ---------------------------------------------------------------------------
+# Configuration constants – keep in sync with the split modules
+# ---------------------------------------------------------------------------
+from prefs import (
+    LMSTUDIO_URL, MODEL,
+    IMAGE_NAME, CONTAINER_NAME, WORKDIR_HOST,
+    TIMEOUT_CONNECT, TIMEOUT_READ, TIMEOUT_WRITE, TIMEOUT_POOL,
+    DEBUG
 )
 
-# ---------- TOOL IMPLEMENTATIONS ----------
-def run_get_date() -> str:
-    """Return current ISO date (YYYY-MM-DD)."""
-    return time.strftime("%Y-%m-%d")
+# HTTPX timeout configuration ----------------------------------------------
+timeout_prefs = httpx.Timeout(
+    connect=TIMEOUT_CONNECT,
+    read=TIMEOUT_READ, # AI think
+    write=TIMEOUT_WRITE,
+    pool=TIMEOUT_POOL,
+)
 
-def run_get_time() -> str:
-    """Return current local time (HH:MM:SS)."""
-    return time.strftime("%H:%M:%S")
-
-def run_write_file(path: str, contents: str) -> str:
-    """Write `contents` to `path` relative to /workdir. Do not overwrite existing files."""
-    full_path = Path(WORKDIR_HOST) / path
-    if full_path.exists():
-        return f"❌ REFUSED: File already exists: {full_path}"
-    full_path.parent.mkdir(parents=True, exist_ok=True)
-    full_path.write_text(contents, encoding="utf-8")
-    return f"✅ File created: {full_path}"
-
-def run_chmod_x(path: str) -> str:
-    """Set +x permission on a file inside sandbox."""
-    full_path = Path(WORKDIR_HOST) / path
-    if not full_path.exists():
-        return f"[ERROR] File not found: {full_path}"
-    full_path.chmod(full_path.stat().st_mode | 0o111)
-    return f"✅ chmod +x applied to {full_path}"
-
-def run_exec(path: str) -> str:
-    """Execute a script inside the Docker container."""
-    script_path = f"/workdir/{path}"
-    cmd = ["docker", "exec", CONTAINER_NAME, script_path]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    except Exception as e:
-        return f"[ERROR] Execution failed: {e}"
-    output = result.stdout.strip()
-    errors = result.stderr.strip()
-    if errors:
-        return f"⚠ STDERR:\n{errors}\n\nSTDOUT:\n{output}"
-    return f"🟢 Execution OK:\n{output}"
-
-def run_read_file(path: str) -> str:
-    """Read contents of a file inside /workdir."""
-    full_path = Path(WORKDIR_HOST) / path
-    if not full_path.exists():
-        return f"❌ File not found: {full_path}"
-    try:
-        return full_path.read_text(encoding="utf-8")
-    except Exception as e:
-        return f"[ERROR] Failed to read file: {e}"
-
-TOOLS = {
-    "get_date": run_get_date,
-    "get_time": run_get_time,
-    "write_file": run_write_file,
-    "chmod_x": run_chmod_x,
-    "exec_script": run_exec,
-    "read_file": run_read_file,
-}
-
-# ---------- UTILITIES ----------
-def check_image() -> bool:
-    res = subprocess.run(["docker", "images", "-q", IMAGE_NAME], capture_output=True, text=True)
-    return bool(res.stdout.strip())
-
-def build_image():
-    console.print(f"[+] Building image {IMAGE_NAME} …", style="bold green")
-    subprocess.check_call(["docker", "build", "--no-cache", "-t", IMAGE_NAME, "."])
-
-def start_container():
-    Path(WORKDIR_HOST).mkdir(parents=True, exist_ok=True)
-    subprocess.check_call([
-        "docker", "run", "--name", CONTAINER_NAME, "-dti",
-        "-v", f"{Path(os.path.abspath(WORKDIR_HOST)).resolve()}:/workdir",
-        IMAGE_NAME,
-    ])
-    console.print(f"[+] Started container {CONTAINER_NAME}", style="bold green")
-
-def stop_container():
-    subprocess.run(["docker", "stop", CONTAINER_NAME], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["docker", "rm", CONTAINER_NAME], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    console.print(f"[+] Stopped and removed container {CONTAINER_NAME}", style="bold green")
-
-def add_message(messages: list[dict], role: str, content: str):
-    messages.append({"role": role, "content": content})
-
-def add_tool_call(messages: list[dict], tool_id: str, name: str, arguments: dict):
-    messages.append({
-        "role": "assistant",
-        "tool_calls": [{
-            "id": tool_id,
-            "type": "function",
-            "function": {
-                "name": name,
-                "arguments": json.dumps(arguments)
-            }
-        }]
-    })
-
-def add_tool_response(messages: list[dict], tool_id: str, result: str):
-    messages.append({
-        "role": "tool",
-        "tool_call_id": tool_id,
-        "content": result
-    })
-
+# ---------------------------------------------------------------------------
+# LLM interaction helpers
+# ---------------------------------------------------------------------------
 async def call_llm(messages: list[dict]):
     async with httpx.AsyncClient(timeout=timeout_prefs) as client:
         payload = {
             "model": MODEL,
             "messages": messages,
-            "tools": [
-                {"type":"function","function":{"name":"get_date","description":"Return current ISO date","parameters":{"type":"object","properties":{}}}},
-                {"type":"function","function":{"name":"get_time","description":"Return current local time","parameters":{"type":"object","properties":{}}}},
-                {"type":"function","function":{
-                    "name":"write_file","description":"Write a file to the sandbox. Provide `path` and `contents`.",
-                    "parameters":{"type":"object","properties":{"path":{"type":"string"},"contents":{"type":"string"}},"required":["path","contents"]}
-                }},
-                {"type":"function","function":{
-                    "name":"chmod_x","description":"Apply chmod +x to a file inside /workdir",
-                    "parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}
-                }},
-                {"type":"function","function":{
-                    "name":"exec_script","description":"Execute a script inside the container using docker exec",
-                    "parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}
-                }},
-                {"type":"function","function":{
-                    "name":"read_file","description":"Read the contents of a file inside the sandbox. Provide `path`.",
-                    "parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}
-                }},
-            ]
+            "tools": LLM_TOOLS_PAYLOAD
         }
         resp = await client.post(LMSTUDIO_URL, json=payload)
         resp.raise_for_status()
         return resp.json()
 
+# ---------------------------------------------------------------------------
+# Chat loop
+# ---------------------------------------------------------------------------
 async def chat_loop():
     console.print("\n🟢 Interactive Chat Started", style="bold green")
     console.print("Type your message and press ENTER. Ctrl-C or 'exit' to quit.\n", style="dim")
@@ -193,11 +91,11 @@ async def chat_loop():
 
         add_message(messages, "user", user_input)
 
-        # 1 Send to LLM
+        # 1. Send to LLM
         response = await call_llm(messages)
         choice = response["choices"][0]["message"]
 
-        # 2 Tool call?
+        # 2. Handle tool calls if any
         if "tool_calls" in choice and choice["tool_calls"]:
             for tc in choice["tool_calls"]:
                 tool_name = tc["function"]["name"]
@@ -221,18 +119,13 @@ async def chat_loop():
 
                 add_tool_response(messages, tool_id, result)
 
-                # --- NEW: print tool call details ---
-                if "[ERROR]" in result:
-                    style = "bold red"
-                elif "❌" in result or "⚠" in result:
-                    style = "yellow"
-                else:
-                    style = "cyan"
+                # Pretty print the call & result
+                style = "bold red" if "[ERROR]" in result else ("yellow" if "❌" in result or "⚠" in result else "cyan")
                 console.print(f"\n[Tool Call] {tool_name}({args_dict}) =>\n{result}\n", style=style)
 
             # Ask again after tool output
             final_resp = await call_llm(messages)
-            final_msg = final_resp["choices"][0]["message"].get("content","")
+            final_msg = final_resp["choices"][0]["message"].get("content", "")
             add_message(messages, "assistant", final_msg)
             console.print(Markdown(final_msg))
         else:
@@ -240,6 +133,30 @@ async def chat_loop():
             text = choice.get("content", "")
             add_message(messages, "assistant", text)
             console.print(Markdown(text))
+
+# ---------------------------------------------------------------------------
+# Utility helpers for message building (kept from original script)
+# ---------------------------------------------------------------------------
+
+def add_message(messages: list[dict], role: str, content: str):
+    messages.append({"role": role, "content": content})
+
+def add_tool_call(messages: list[dict], tool_id: str, name: str, arguments: dict):
+    messages.append({
+        "role": "assistant",
+        "tool_calls": [{
+            "id": tool_id,
+            "type": "function",
+            "function": {"name": name, "arguments": json.dumps(arguments)}
+        }]
+    })
+
+def add_tool_response(messages: list[dict], tool_id: str, result: str):
+    messages.append({"role": "tool", "tool_call_id": tool_id, "content": result})
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
 
 def main():
     if not check_image():
@@ -255,4 +172,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
