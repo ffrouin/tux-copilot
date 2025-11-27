@@ -110,7 +110,7 @@ You> exit
 
 ## 📝 License
 
-MIT or Apache-2.0 (choose based on your needs)
+Apache-2.0
 
 ## 🤝 Contributing
 
