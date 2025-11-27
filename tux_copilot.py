@@ -100,12 +100,29 @@ def run_exec(path: str) -> str:
         return f"⚠️ STDERR:\n{errors}\n\nSTDOUT:\n{output}"
     return f"🟢 Execution OK:\n{output}"
 
+def run_read_file(path: str) -> str:
+    """
+    Read contents of a file inside /workdir.
+    Returns content or error if file does not exist.
+    """
+    full_path = Path(WORKDIR_HOST) / path
+
+    if not full_path.exists():
+        return f"❌ File not found: {full_path}"
+
+    try:
+        content = full_path.read_text(encoding="utf-8")
+        return content
+    except Exception as e:
+        return f"[ERROR] Failed to read file: {e}"
+
 TOOLS = {
     "get_date": run_get_date,
     "get_time": run_get_time,
     "write_file": run_write_file,
     "chmod_x": run_chmod_x,
     "exec_script": run_exec,
+    "read_file": run_read_file,
 }
 
 # ---------- UTILITIES ----------
@@ -220,6 +237,20 @@ async def call_llm(messages: list[dict]):
                             "type": "object",
                             "properties": {
                                 "path": {"type": "string", "description": "Relative script path inside /workdir"},
+                            },
+                            "required": ["path"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "description": "Read the contents of a file inside the sandbox. Provide `path`.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Relative file path"},
                             },
                             "required": ["path"]
                         }
