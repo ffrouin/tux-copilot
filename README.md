@@ -35,9 +35,13 @@ Tux Copilot is designed with safety in mind:
 * Python 3.10+
 * An LLM provider (local or remote)
 
+```bash
+pip install -r requirements.txt
+```
+
 ## 📦 Installation
 
-```
+```bash
 git clone https://github.com/youruser/tux-copilot
 ```
 
@@ -45,7 +49,7 @@ git clone https://github.com/youruser/tux-copilot
 
 Start the assistant:
 
-```
+```bash
 cd tux-copilot
 python3 tux_copilot.py
 ```
