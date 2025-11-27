@@ -17,10 +17,7 @@ This keeps your actual machine completely safe while allowing the AI to work wit
 ## ✨ Features
 
 * **Sandboxed Execution**: All commands run inside an ephemeral Docker container
-* **Secure File API**: AI can create new files but *never overwrite existing ones* (configurable)
-* **Command Tools**: Exposed safe utilities like `ls`, `cat`, `grep`, `sed`, etc.
 * **Script Execution**: AI can mark generated scripts as executable and run them in the sandbox
-* **Session Persistence**: Work persists inside the container until you stop the session
 * **Markdown-friendly terminal output**
 * **Works with any LLM**: Local (llama.cpp, ollama) or remote (OpenAI, Anthropic, etc.)
 
@@ -29,9 +26,7 @@ This keeps your actual machine completely safe while allowing the AI to work wit
 Tux Copilot is designed with safety in mind:
 
 * The AI **never touches your host system**
-* The AI **cannot rewrite existing files** (optional strict mode)
 * Network access inside the sandbox can be disabled
-* Commands are executed with minimal privileges
 * Everything happens inside a disposable container
 
 ## 🔧 Requirements
@@ -42,24 +37,17 @@ Tux Copilot is designed with safety in mind:
 
 ## 📦 Installation
 
-```bash
-pip install tux-copilot
 ```
-
-Or run directly from the repo:
-
-```bash
 git clone https://github.com/youruser/tux-copilot
-cd tux-copilot
-python3 -m tux_copilot
 ```
 
 ## ▶️ Usage
 
 Start the assistant:
 
-```bash
-tux-copilot
+```
+cd tux-copilot
+python3 tux_copilot.py
 ```
 
 Example interaction:
@@ -77,35 +65,6 @@ To exit:
 exit
 quit
 bye
-```
-
-## ⚙️ Configuration
-
-`~/.tux_copilot/config.yaml`:
-
-```yaml
-sandbox_image: debian:stable
-allow_overwrite: false
-llm_provider: openai
-model: gpt-4.1
-```
-
-## 🔌 Extending Tools
-
-Tux Copilot supports custom tool hooks:
-
-* Add new safe commands
-* Provide structured APIs
-* Integrate tests or CI utilities
-
-Example (Python):
-
-```python
-from tux_copilot.tools import register_tool
-
-@register_tool
-def my_custom_tool(args):
-    return "Hello from tool"
 ```
 
 ## 📝 License
