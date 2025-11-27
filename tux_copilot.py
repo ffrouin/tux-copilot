@@ -41,7 +41,7 @@ from sandbox import check_image, build_image, start_container, stop_container
 # Configuration constants – keep in sync with the split modules
 # ---------------------------------------------------------------------------
 from prefs import (
-    LMSTUDIO_URL, MODEL,
+    LMSTUDIO_URL, MODEL, LLM_PROMPT,
     IMAGE_NAME, CONTAINER_NAME, WORKDIR_HOST,
     TIMEOUT_CONNECT, TIMEOUT_READ, TIMEOUT_WRITE, TIMEOUT_POOL,
     DEBUG
@@ -76,7 +76,7 @@ async def chat_loop():
     console.print("\n🟢 Interactive Chat Started", style="bold green")
     console.print("Type your message and press ENTER. Ctrl-C or 'exit' to quit.\n", style="dim")
 
-    messages: list[dict] = []
+    messages: list[dict] = [{"role": "system", "content": LLM_PROMPT}]
 
     while True:
         try:
