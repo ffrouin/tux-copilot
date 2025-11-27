@@ -17,7 +17,8 @@ This keeps your actual machine completely safe while allowing the AI to work wit
 ## ✨ Features
 
 * **Sandboxed Execution**: All commands run inside an ephemeral Docker container
-* **Script Execution**: AI can mark generated scripts as executable and run them in the sandbox
+* **Sandboxed Cross-Environment**: Use *any* Docker image as your execution environment (Python, Node.js, Go, Rust, Alpine, Ubuntu, CUDA, enterprise images…).  
+  Tux Copilot adapts to whatever tech stack you choose, making it a universal and portable development assistant.
 * **Markdown-friendly terminal output**
 * **Works with any LLM**: Local (llama.cpp, ollama) or remote (OpenAI, Anthropic, etc.)
 
@@ -31,7 +32,7 @@ Tux Copilot is designed with safety in mind:
 
 ## 🔧 Requirements
 
-* Docker or Podman
+* Docker (user running tux_copilot needs to be in docker group)
 * Python 3.10+
 * An LLM provider (local or remote)
 
