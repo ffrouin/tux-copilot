@@ -126,12 +126,12 @@ async def chat_loop():
             final_resp = await call_llm(messages)
             final_msg = final_resp["choices"][0]["message"].get("content", "")
             add_message(messages, "assistant", final_msg)
-            console.print(Markdown(final_msg))
+            console.print(Markdown("Tux" + "> " + final_msg))
         else:
             # Normal assistant reply
             text = choice.get("content", "")
             add_message(messages, "assistant", text)
-            console.print(Markdown(text))
+            console.print(Markdown("Tux" + "> " + text))
 
 # ---------------------------------------------------------------------------
 # Utility helpers for message building (kept from original script)
