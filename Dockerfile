@@ -9,7 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3 python3-pip python3-venv \
-        bash git ca-certificates curl jq && \
+        bash git ca-certificates curl jq sudo && \
     rm -rf /var/lib/apt/lists/*
 
 # Create a working directory for the copilot to write files
@@ -20,12 +20,16 @@ VOLUME /workdir
 ENV USERNAME=tux
 ENV UID=1000
 ENV GID=1000
-RUN groupadd -g ${GID} ${USERNAME} && \
-    useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USERNAME}
 
-# Switch to that user for any future commands (good practice)
+# Create user + sudo privileges
+RUN groupadd -g ${GID} ${USERNAME} && \
+    useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USERNAME} && \
+    usermod -aG sudo ${USERNAME} && \
+    echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} && \
+    chmod 0440 /etc/sudoers.d/${USERNAME}
+
+# Switch to tux user for all remaining operations
 USER ${USERNAME}:${USERNAME}
 WORKDIR /workdir
 
 CMD ["bash"]
-

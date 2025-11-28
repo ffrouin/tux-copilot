@@ -33,8 +33,7 @@ from rich.markdown import Markdown
 console = Console()
 
 # Import the split modules --------------------------------------------------
-from tools import TOOLS, run_get_date, run_get_time, run_write_file, \
-    run_chmod_x, run_exec, run_read_file, LLM_TOOLS_PAYLOAD
+from tools import TOOLS, LLM_TOOLS_PAYLOAD
 from sandbox import check_image, build_image, start_container, stop_container
 
 # ---------------------------------------------------------------------------
@@ -121,7 +120,7 @@ async def chat_loop():
 
                 # Pretty print the call & result
                 style = "bold red" if "[ERROR]" in result else ("yellow" if "❌" in result or "⚠" in result else "cyan")
-                console.print(f"\n[Tool Call] {tool_name}({args_dict}) =>\n{result}\n", style=style)
+                console.print(f"\ntool call {tool_name}\n{result}\n", style=style)
 
             # Ask again after tool output
             final_resp = await call_llm(messages)
