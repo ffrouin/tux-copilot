@@ -33,17 +33,15 @@ Tux Copilot is designed with safety in mind:
 ## 🔧 Requirements
 
 * Docker (user running tux_copilot needs to be in docker group)
-* Python 3.10+
-* An LLM provider (local or remote)
-
-```bash
-pip install -r requirements.txt
-```
+* Python 3.10+ (httpx, rich)
+* An LLM provider (local or remote) - [LM Studio](https://lmstudio.ai/)
 
 ## 📦 Installation
 
 ```bash
-git clone https://github.com/youruser/tux-copilot
+git clone https://github.com/ffrouin/tux-copilot
+cd tux-coplilot
+pip install -r requirements.txt
 ```
 
 ## ▶️ Usage
